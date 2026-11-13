@@ -178,18 +178,22 @@ def tokenize_segment(
         "pad_id": bundle.pad_id, "bos_id": bundle.bos_id,
     }
     if include_duration_features:
-        if str(bundle.irodori_dir) not in sys.path:
-            sys.path.insert(0, str(bundle.irodori_dir))
-        import torch
-        from irodori_tts.duration import build_duration_features
+        try:
+            import torch
+        except ImportError:
+            print("note: skipped duration_features (torch is not installed)", file=sys.stderr)
+        else:
+            if str(bundle.irodori_dir) not in sys.path:
+                sys.path.insert(0, str(bundle.irodori_dir))
+            from irodori_tts.duration import build_duration_features
 
-        feats = build_duration_features(
-            [norm_text],
-            token_counts=torch.tensor([tl], dtype=torch.long),
-            max_text_len=max_text_len,
-            has_speaker=torch.zeros((1,), dtype=torch.bool),
-        )
-        out["duration_features"] = feats[0].tolist()
+            feats = build_duration_features(
+                [norm_text],
+                token_counts=torch.tensor([tl], dtype=torch.long),
+                max_text_len=max_text_len,
+                has_speaker=torch.zeros((1,), dtype=torch.bool),
+            )
+            out["duration_features"] = feats[0].tolist()
     return out
 
 
@@ -207,6 +211,8 @@ def main() -> None:
                          'look up the Hugging Face cache snapshot')
     ap.add_argument('--max-text-len', type=int, default=256)
     ap.add_argument('--max-caption-len', type=int, default=512)
+    ap.add_argument('--no-duration-features', action='store_true',
+                    help='skip duration_features (unused by infer_onnx.py) to avoid importing torch')
     args = ap.parse_args()
 
     if not args.irodori_dir:
@@ -220,9 +226,9 @@ def main() -> None:
     out = tokenize_segment(
         bundle, args.text, args.caption,
         max_text_len=args.max_text_len, max_caption_len=args.max_caption_len,
-        include_duration_features=True,
+        include_duration_features=not args.no_duration_features,
     )
-    Path(args.out).write_text(json.dumps(out, ensure_ascii=False, indent=1))
+    Path(args.out).write_text(json.dumps(out, ensure_ascii=False, indent=1), encoding="utf-8")
     print("out", args.out, "text_len", out["text_len"], "caption_len", out["caption_len"])
     print("text_ids", out["text_ids"])
     print("caption_ids", out["caption_ids"])

@@ -60,7 +60,7 @@ int8 をいきなり信用しない。順番を守ること：
 - **本文はレアトークン分割 ON、キャプションは OFF**。公式ランタイム準拠。
   キャプションに分割を適用すると尺予測がずれる (実測 189→178 frames)。
   `scripts/tokenize_text.py` はこの設定を再現済みなので、自作しないこと。
-- `--tokenizer-dir models/int8/tokenizer` 等に `tokenizer.json` がある場合は、`tokenizers` のみを使う `torch` レス高速経路が自動選択される (`PretrainedTextTokenizer` と完全一致)。`duration_features` を含む単体 CLI 出力やフォールバック時は `<irodori-tts>/.venv/bin/python` を使用する。
+- `--tokenizer-dir models/int8/tokenizer` 等に `tokenizer.json` がある場合は、`tokenizers` のみを使う `torch` レス高速経路が自動選択される (`PretrainedTextTokenizer` と完全一致)。`torch` 未導入の `.venv` では `duration_features` 出力が自動スキップされ、`torch` 導入済み環境でも `--no-duration-features` を付けると `torch` 読込を省略して高速化できる。`duration_features` を含む JSON が必要な場合のみ `<irodori-tts>/.venv/bin/python` を使用する。
 - 単発推論は生成1回ごとに本文 (とキャプション) の tokens.json が要る（長文の一括生成は手順 6 の `speak_long_text.py` を推奨）。
 
 ## 手順 4: 声を選ぶ (混合文で選定する)

@@ -60,6 +60,7 @@ uv pip install --python .venv/bin/python onnxruntime==1.31.1 numpy soundfile pyl
 .venv/bin/python scripts/tokenize_text.py \
     --irodori-dir <irodori-tts> \
     --tokenizer-dir models/int8/tokenizer \
+    --no-duration-features \
     --text "こんにちは。今日もよろしくお願いします。" \
     --caption "若い女性の声。明るく親しみやすく話す。" \
     --out tokens.json
