@@ -17,6 +17,24 @@ import numpy as np
 import soundfile as sf
 
 
+def join_audio_arrays(pieces: list[np.ndarray], sr: int, gap_sec: float = 0.4) -> np.ndarray:
+    """Concatenate waveform arrays along time axis with a fixed silence gap."""
+    if not pieces:
+        raise ValueError("pieces must contain at least one array")
+    gap_samples = int(round(gap_sec * sr))
+    if pieces[0].ndim == 1:
+        gap = np.zeros((gap_samples,), dtype=np.float32)
+    else:
+        gap = np.zeros((gap_samples, pieces[0].shape[1]), dtype=np.float32)
+
+    out_parts = []
+    for i, piece in enumerate(pieces):
+        if i:
+            out_parts.append(gap)
+        out_parts.append(piece)
+    return np.concatenate(out_parts, axis=0)
+
+
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument('inputs', nargs='+', help='wav files in playback order')
@@ -37,13 +55,7 @@ def main() -> None:
                 f'expected sr={sr_ref}, ch={ch_ref})')
         pieces.append(data)
 
-    gap = np.zeros((int(round(args.gap * sr_ref)), ch_ref), dtype=np.float32)
-    out_parts = []
-    for i, piece in enumerate(pieces):
-        if i:
-            out_parts.append(gap)
-        out_parts.append(piece)
-    joined = np.concatenate(out_parts, axis=0)
+    joined = join_audio_arrays(pieces, sr_ref, gap_sec=args.gap)
 
     Path(args.out).parent.mkdir(parents=True, exist_ok=True)
     sf.write(args.out, joined, sr_ref, subtype='PCM_16')

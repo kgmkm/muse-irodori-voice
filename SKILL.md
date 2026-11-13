@@ -32,10 +32,11 @@ Muse の VM (CPU のみ) で Irodori-TTS v4.1-Small-MF を ONNX Runtime 推論�
    - **罠**：ダウンロード前に `NO_PROXY=localhost,127.0.0.1` を設定する。
      IPv6 表記が含まれていると httpx が `Invalid port: ':1]'` で落ちる。
 3. 推論用 venv を作る：
-   `uv venv .venv && uv pip install --python .venv/bin/python onnxruntime==1.31.1 numpy soundfile pyloudnorm scipy`
-4. 公式 repo をクローンし、その手順で CPU 環境と HF キャッシュ
-   (トークナイザとチェックポイント) を用意する：
-   `uv sync --extra cpu` (所要 約4分、キャッシュ約3.4GB)。
+   `uv venv .venv && uv pip install --python .venv/bin/python onnxruntime==1.31.1 numpy soundfile pyloudnorm scipy tokenizers`
+4. 公式 repo をクローンする (`git clone https://github.com/Aratako/Irodori-TTS.git`)。
+   - 通常のトークナイズ＋ONNX 推論は上記 `.venv` のみで動作する (`tokenizers` 使用の `torch` レス高速経路)。
+   - 手順 2 の PyTorch 版との比較検証を行う場合や `tokenize_text.py` 単体で `duration_features` を出力する場合は、公式 repo 側でも CPU 環境と HF キャッシュを用意する：
+     `uv sync --extra cpu` (所要 約4分、キャッシュ約3.4GB)。
 
 ## 手順 2: まず float で移植を検証する (省略禁止)
 
@@ -50,15 +51,17 @@ int8 をいきなり信用しない。順番を守ること：
 ## 手順 3: トークナイズ (罠あり)
 
 ```bash
-<irodori-tts>/.venv/bin/python scripts/tokenize_text.py \
-  --irodori-dir <irodori-tts> --text "<本文>" --caption "<キャプション>" \
+.venv/bin/python scripts/tokenize_text.py \
+  --irodori-dir <irodori-tts> --tokenizer-dir models/int8/tokenizer \
+  --text "<本文>" --caption "<キャプション>" \
   --out tokens.json
 ```
 
 - **本文はレアトークン分割 ON、キャプションは OFF**。公式ランタイム準拠。
   キャプションに分割を適用すると尺予測がずれる (実測 189→178 frames)。
   `scripts/tokenize_text.py` はこの設定を再現済みなので、自作しないこと。
-- 生成1回ごとに本文 (とキャプション) の tokens.json が要る。
+- `--tokenizer-dir models/int8/tokenizer` 等に `tokenizer.json` がある場合は、`tokenizers` のみを使う `torch` レス高速経路が自動選択される (`PretrainedTextTokenizer` と完全一致)。`duration_features` を含む単体 CLI 出力やフォールバック時は `<irodori-tts>/.venv/bin/python` を使用する。
+- 単発推論は生成1回ごとに本文 (とキャプション) の tokens.json が要る（長文の一括生成は手順 6 の `speak_long_text.py` を推奨）。
 
 ## 手順 4: 声を選ぶ (混合文で選定する)
 
@@ -126,8 +129,19 @@ int8 をいきなり信用しない。順番を守ること：
 
 1. 文章を文の区切りで **1区間 70〜80 字** に分割する。
    (145 字一発では語の脱落/挿入が実測で発生。区間は ±5 字程度を目安に。)
-2. 区間ごとに tokens.json を作り、同じ参照潜在・同じシードで生成する。
-3. 結合：`.venv/bin/python scripts/join_wavs.py part1.wav part2.wav --gap 0.4 --out full.wav`
+2. **一括生成（推奨）**：`scripts/speak_long_text.py` を使うと、単一プロセス内で自動分割・`torch` レス高速トークナイズ・ONNX セッションと共通条件 (キャプション・参照潜在) の初回1回読込＆再利用・0.4 秒ギャップ結合まで一括実行できる：
+   ```bash
+   .venv/bin/python scripts/speak_long_text.py \
+     --irodori-dir <irodori-tts> \
+     --caption "<キャプション>" \
+     --ref-latents ref/my-voice.npz \
+     --truncation-factor 0.85 \
+     --text "<長文テキスト>" \
+     --out full.wav
+   ```
+   (`--threads` の既定値は `min(6, max(2, cpu_count // 2))`、2 vCPU 環境では `2`。)
+3. **個別に回す場合**：区間ごとに tokens.json を作り、同じ参照潜在・同じシードで生成してから結合する：
+   `.venv/bin/python scripts/join_wavs.py part1.wav part2.wav --gap 0.4 --out full.wav`
 
 ## パラメータ決定値 (検証済み)
 
