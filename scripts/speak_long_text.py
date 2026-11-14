@@ -47,35 +47,28 @@ DEFAULT_THREADS = min(6, max(2, (os.cpu_count() or 2) // 2))
 
 
 def split_text_into_sentences(text: str, max_chars: int = 80) -> list[str]:
-    """Split text into sentence-level segments (~50-80 chars max)."""
-    text = text.strip()
-    if not text:
-        return []
+    """Split text into sentence-packed segments up to max_chars."""
+    if max_chars <= 0:
+        raise ValueError(f"max_chars must be > 0, got {max_chars}")
 
-    raw_sentences = re.split(r'(?<=[。！？!?\n])', text)
-    sentences = [s.strip() for s in raw_sentences if s.strip()]
+    pieces: list[str] = []
+    for s in (s.strip() for s in re.split(r'(?<=[。！？!?\n])', text.strip()) if s.strip()):
+        parts = [s] if len(s) <= max_chars else [p.strip() for p in re.split(r'(?<=[、,])', s) if p.strip()]
+        for p in parts:
+            pieces.extend(p[i:i + max_chars] for i in range(0, len(p), max_chars))
 
-    refined = []
-    for s in sentences:
-        if len(s) <= max_chars:
-            refined.append(s)
+    segments: list[str] = []
+    current = ""
+    for p in pieces:
+        if len(current) + len(p) <= max_chars:
+            current += p
         else:
-            sub_parts = re.split(r'(?<=[、,])', s)
-            current = ""
-            for p in sub_parts:
-                p = p.strip()
-                if not p:
-                    continue
-                if len(current) + len(p) <= max_chars:
-                    current += p
-                else:
-                    if current:
-                        refined.append(current)
-                    current = p
             if current:
-                refined.append(current)
-
-    return refined
+                segments.append(current)
+            current = p
+    if current:
+        segments.append(current)
+    return segments
 
 
 def main() -> None:
