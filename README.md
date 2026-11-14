@@ -22,6 +22,8 @@ Muse の VM 上で **Irodori-TTS v4.1-Small-MF** の **ONNX int8 推論**を動�
   その勝ちクリップを単一参照にすることで、楽しげな文も心配な文も
   「同じ声のまま」読める。
 - **長文対応**：1区間 70〜80 字に分割生成し、0.4 秒間隔で結合するワークフロー。
+  `scripts/speak_long_text.py` を使うと、単一プロセスでトークナイザと ONNX モデルを
+  1回だけ読み込み、共通条件を使い回して高速に一括生成できる。
 
 ## 実測 (Muse VM: 2 vCPU AVX-512 VNNI / RAM 7.7GB / onnxruntime 1.31.1 / Python 3.12)
 
@@ -41,8 +43,8 @@ Muse の VM 上で **Irodori-TTS v4.1-Small-MF** の **ONNX int8 推論**を動�
 
 - Linux x86_64 (AVX-512 VNNI があると速い)、Python 3.12
 - トークナイズ用に公式 [Aratako/Irodori-TTS](https://github.com/Aratako/Irodori-TTS)
-  のチェックアウトと、その venv (手順は SKILL.md)
-- ディスク数 GB (モデル一式 + 公式 repo のキャッシュ)
+  のチェックアウト (`tokenizers` による高速経路を使えば公式 venv 構築不要、float 検証時のみ公式 venv を使用)
+- ディスク数 GB (モデル一式 + 公式 repo)
 
 手順：
 
@@ -50,13 +52,15 @@ Muse の VM 上で **Irodori-TTS v4.1-Small-MF** の **ONNX int8 推論**を動�
 # 1. ONNX モデルを取得 (重みは本 repo には含まれません)
 bash scripts/download_models.sh     # -> models/int8, models/f32
 
-# 2. 推論用 venv
+# 2. 推論用 venv (tokenizers を含めると torch レスで高速トークナイズが可能)
 uv venv .venv
-uv pip install --python .venv/bin/python onnxruntime==1.31.1 numpy soundfile pyloudnorm scipy
+uv pip install --python .venv/bin/python onnxruntime==1.31.1 numpy soundfile pyloudnorm scipy tokenizers
 
-# 3. トークナイズ (公式 repo の venv で実行)
-<irodori-tts>/.venv/bin/python scripts/tokenize_text.py \
+# 3. トークナイズ (models/int8/tokenizer を使う場合は .venv のみ・torch レスで動作)
+.venv/bin/python scripts/tokenize_text.py \
     --irodori-dir <irodori-tts> \
+    --tokenizer-dir models/int8/tokenizer \
+    --no-duration-features \
     --text "こんにちは。今日もよろしくお願いします。" \
     --caption "若い女性の声。明るく親しみやすく話す。" \
     --out tokens.json
@@ -113,7 +117,16 @@ npz は各自の声そのものなので、**この repo には含めないで�
 ### 長文を読む
 
 ```bash
-# 文章を文の区切りで 70〜80 字ずつに分け、それぞれ生成してから結合
+# 単一プロセスで分割・高速トークナイズ・モデル1回読込・条件再利用・結合まで一括実行
+.venv/bin/python scripts/speak_long_text.py \
+    --irodori-dir <irodori-tts> \
+    --caption "若い女性の声。明るく親しみやすく話す。" \
+    --ref-latents ref/my-voice.npz \
+    --truncation-factor 0.85 \
+    --text "長い文章。文ごとに自動分割して結合します。" \
+    --out full.wav
+
+# 個別に生成したパートを結合だけ行う場合
 .venv/bin/python scripts/join_wavs.py part1.wav part2.wav --gap 0.4 --out full.wav
 ```
 
